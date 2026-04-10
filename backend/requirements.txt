@@ -4,3 +4,5 @@ python-dotenv
 firebase-admin
 google-generativeai
 pydantic
+python-multipart
+groq

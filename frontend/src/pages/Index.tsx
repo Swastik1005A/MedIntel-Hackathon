@@ -23,52 +23,56 @@ const Index = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [results, setResults] = useState<AnalysisResult[]>([]);
+  const [analyzingMeds, setAnalyzingMeds] = useState<string[]>([]);
   const [noResult, setNoResult] = useState(false);
 
   // --- 1. MEDICINE SEARCH LOGIC (Core AI Engine) ---
-  const handleSearch = async (query: string) => {
+  const handleSearch = async (queryInput: string | string[]) => {
     setIsLoading(true);
-    setResult(null);
+    setResults([]);
     setNoResult(false);
 
+    const queries = Array.isArray(queryInput) ? queryInput : [queryInput];
+    setAnalyzingMeds(queries);
+
     try {
-        console.log("ANALYZING:", query);
-        const response = await axios.post('http://127.0.0.1:8000/analyze-medication', {
-            name: query 
-        }, { timeout: 15000 });
+        console.log("ANALYZING:", queries);
 
-        const data = response.data;
-        
-        // Map ALL alternatives from Groq/Llama to the UI Schema
-        const analysis: AnalysisResult = {
-            original: {
-                id: "original-001",
-                name: data.name || query,
-                manufacturer: "Branded",
-                salt: data.salt || 'Medicine',
-                price: Math.round(data.price),
-                dosage: 'Standard',
-                type: 'Medicine'
-            },
-            alternatives: data.alternatives.map((alt: any, index: number) => ({
-                id: `alt-${index}`,
-                name: alt.alt_name,
-                manufacturer: "Generic",
-                salt: data.salt || 'Medicine',
-                price: Math.round(alt.alt_price),
-                dosage: 'Standard',
-                type: 'Medicine'
-            })),
-            confidence: 98,
-            safetyLevel: "safe",
-            reasoning: data.alternatives[0]?.side_effects?.length > 0 
-                ? "Watch out for: " + data.alternatives[0].side_effects.join(", ") 
-                : "Generally safe."
-        };
+        const allAnalyses = await Promise.all(queries.map(async (query, qIndex) => {
+            const response = await axios.post('http://127.0.0.1:8000/analyze-medication', {
+                name: query 
+            }, { timeout: 15000 });
 
-        setResult(analysis);
-        setNoResult(false);
+            const data = response.data;
+            
+            return {
+                original: {
+                    id: `original-${qIndex}`,
+                    name: data.name || query,
+                    manufacturer: "Branded",
+                    salt: data.salt || 'Medicine',
+                    price: Math.round(data.price),
+                    dosage: 'Standard',
+                    type: 'Medicine'
+                },
+                alternatives: data.alternatives.map((alt: any, index: number) => ({
+                    id: `alt-${qIndex}-${index}`,
+                    name: alt.alt_name,
+                    manufacturer: "Generic",
+                    salt: data.salt || 'Medicine',
+                    price: Math.round(alt.alt_price),
+                    dosage: 'Standard',
+                    type: 'Medicine'
+                })),
+                confidence: 98,
+                safetyLevel: "safe",
+                reasoning: data.description || "Waiting for detailed clinical analysis..."
+            } as AnalysisResult;
+        }));
+
+        setResults(allAnalyses);
+        setNoResult(allAnalyses.length === 0);
 
     } catch (err: any) {
         console.error("Search Error:", err.message);
@@ -80,13 +84,15 @@ const Index = () => {
         });
     } finally {
         setIsLoading(false);
+        setAnalyzingMeds([]);
     }
   };
 
   // --- 2. PRESCRIPTION VISION LOGIC (The "Magic" Step) ---
   const handleFileUpload = async (file: File) => {
     setIsLoading(true);
-    setResult(null);
+    setResults([]);
+    setNoResult(false);
     toast({ 
         title: "Scanning Prescription", 
         description: "Llama 3.2 Vision is reading the doctor's handwriting..." 
@@ -96,21 +102,20 @@ const Index = () => {
     formData.append("file", file);
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/analyze-prescription', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const response = await axios.post('http://127.0.0.1:8000/analyze-prescription', formData);
+
 
       console.log("VISION EXTRACTED:", response.data);
 
       if (response.data.medicines && response.data.medicines.length > 0) {
-        const firstMed = response.data.medicines[0];
+        const meds = response.data.medicines;
         toast({ 
             title: "Success!", 
-            description: `Extracted: ${firstMed}. Finding cheaper options...` 
+            description: `Extracted ${meds.length} medicines. Finding cheaper options...` 
         });
         
-        // AUTO-TRIGGER Search
-        handleSearch(firstMed); 
+        // AUTO-TRIGGER Search with full array
+        handleSearch(meds); 
       } else {
         toast({ 
             title: "Read Error", 
@@ -131,12 +136,18 @@ const Index = () => {
   };
 
   // --- 3. CALCULATE SAVINGS ---
-  const lowestAltPrice = result && result.alternatives.length > 0 
-    ? Math.min(...result.alternatives.map(a => a.price)) 
-    : 0;
-  
-  const savings = result ? result.original.price - lowestAltPrice : 0;
-  const savingsPercent = result ? Math.round((savings / result.original.price) * 100) : 0;
+  let totalOriginalPrice = 0;
+  let totalCheapestPrice = 0;
+
+  results.forEach(res => {
+     if (res.alternatives.length > 0) {
+         totalOriginalPrice += res.original.price;
+         totalCheapestPrice += Math.min(...res.alternatives.map(a => a.price));
+     }
+  });
+
+  const savings = totalOriginalPrice - totalCheapestPrice;
+  const savingsPercent = totalOriginalPrice > 0 ? Math.round((savings / totalOriginalPrice) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -152,7 +163,22 @@ const Index = () => {
       {user && <SearchHistory onReSearch={handleSearch} />}
       {user && <PersonalSavingsTracker />}
 
-      {isLoading && <AnalysisLoader />}
+      {isLoading && analyzingMeds.length > 0 ? (
+        <div className="animate-fade-in" id="loading-content">
+          <div className="space-y-12">
+            {analyzingMeds.map((med, index) => (
+                <div key={index} className="bg-muted/30 backdrop-blur-sm rounded-[40px] border border-border/50 relative shadow-sm mt-4">
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-background border-2 border-primary/20 text-primary px-8 py-2 rounded-full text-sm font-black uppercase tracking-widest -mt-5 shadow-lg">
+                     Processing {index + 1} of {analyzingMeds.length}
+                  </div>
+                  <AnalysisLoader medicineName={med} />
+                </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        isLoading && <AnalysisLoader />
+      )}
 
       {noResult && (
         <section className="py-12">
@@ -168,13 +194,25 @@ const Index = () => {
         </section>
       )}
 
-      {result && result.alternatives.length > 0 && (
-        <div className="animate-fade-in" id="report-content">
-          <ComparisonPanel result={result} />
-          <SavingsHighlight savings={savings} percentage={savingsPercent} />
-          <SafetyIndicator result={result} />
-          <ExplainPanel reasoning={result.reasoning} />
-          <DownloadReport result={result} />
+      {results && results.length > 0 && (
+        <div className="animate-fade-in block w-full overflow-x-hidden max-w-full xl:max-w-[1500px] mx-auto px-2 md:px-8 py-8" id="report-content">
+            {results.map((res, index) => (
+               <div key={res.original.id} className="bg-muted/30 backdrop-blur-sm rounded-[40px] p-6 md:p-10 border border-border/50 relative shadow-sm mb-20 w-full overflow-x-auto lg:overflow-x-visible">
+                   {results.length > 1 && (
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-background border-2 border-primary/20 text-primary px-8 py-2 rounded-full text-sm font-black uppercase tracking-widest -mt-5 shadow-lg">
+                         Medicine {index + 1} of {results.length}
+                      </div>
+                   )}
+                   <ComparisonPanel result={res} />
+                   <SafetyIndicator result={res} />
+                   <ExplainPanel reasoning={res.reasoning} medicineName={res.original.name} salt={res.original.salt} />
+               </div>
+            ))}
+          
+          <div className="flex flex-col gap-8 w-full mt-4">
+            <SavingsHighlight savings={savings} percentage={savingsPercent} />
+            <DownloadReport results={results} result={results[0]} />
+          </div>
         </div>
       )}
 

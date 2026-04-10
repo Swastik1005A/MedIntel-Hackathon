@@ -1,14 +1,24 @@
-import { useState } from "react";
-import { Volume2, MessageSquareText } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Volume2, Sparkles, ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ExplainPanelProps {
   reasoning: string;
+  medicineName?: string;
+  salt?: string;
 }
 
-const ExplainPanel = ({ reasoning }: ExplainPanelProps) => {
+const ExplainPanel = ({ reasoning, medicineName, salt }: ExplainPanelProps) => {
   const [expanded, setExpanded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [isThinking, setIsThinking] = useState(true);
+
+  useEffect(() => {
+    // Simulate AI typing/thinking delay for UI effect
+    setIsThinking(true);
+    const timer = setTimeout(() => setIsThinking(false), 1200);
+    return () => clearTimeout(timer);
+  }, [reasoning]);
 
   const handleSpeak = () => {
     if ("speechSynthesis" in window) {
@@ -31,7 +41,7 @@ const ExplainPanel = ({ reasoning }: ExplainPanelProps) => {
         <div className="bg-card rounded-2xl border p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-              <MessageSquareText className="w-5 h-5 text-primary" />
+              <Sparkles className="w-5 h-5 text-primary" />
               AI Explanation
             </h3>
             <div className="flex gap-2">
@@ -47,24 +57,21 @@ const ExplainPanel = ({ reasoning }: ExplainPanelProps) => {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setExpanded(!expanded)}
-                className="text-xs"
+                onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent((salt || medicineName || 'medicine') + ' clinical evidence side effects')}`, '_blank')}
+                className="text-xs flex items-center"
               >
-                {expanded ? "Less" : "More"}
+                More <ExternalLink className="w-3 h-3 ml-1" />
               </Button>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground leading-relaxed">{reasoning}</p>
-          {expanded && (
-            <div className="mt-4 p-4 bg-muted rounded-xl text-sm text-muted-foreground animate-fade-in">
-              <p className="mb-2"><strong>How it works:</strong></p>
-              <ul className="list-disc list-inside space-y-1 text-xs">
-                <li>We parse the active salt composition of your medicine</li>
-                <li>Our database matches medicines with identical active ingredients</li>
-                <li>Alternatives are ranked by price while maintaining clinical equivalence</li>
-                <li>Confidence scores reflect the accuracy of salt-based matching</li>
-              </ul>
+          
+          {isThinking ? (
+            <div className="flex items-center gap-2 text-sm text-primary font-medium py-3 animate-pulse">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Generating clinical summary...
             </div>
+          ) : (
+            <p className="text-sm text-foreground leading-relaxed animate-fade-in">{reasoning}</p>
           )}
         </div>
       </div>

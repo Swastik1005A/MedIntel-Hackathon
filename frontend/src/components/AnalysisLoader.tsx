@@ -1,6 +1,10 @@
 import { Loader2, Brain } from "lucide-react";
 
-const AnalysisLoader = () => {
+interface AnalysisLoaderProps {
+  medicineName?: string;
+}
+
+const AnalysisLoader = ({ medicineName }: AnalysisLoaderProps) => {
   return (
     <section className="py-12">
       <div className="container mx-auto px-4 max-w-2xl text-center">
@@ -8,7 +12,9 @@ const AnalysisLoader = () => {
           <div className="w-16 h-16 rounded-full gradient-primary flex items-center justify-center mx-auto mb-6 animate-pulse-gentle">
             <Brain className="w-8 h-8 text-primary-foreground" />
           </div>
-          <h3 className="text-xl font-semibold text-foreground mb-2">Analyzing Medicine...</h3>
+          <h3 className="text-xl font-semibold text-foreground mb-2">
+             Analyzing {medicineName ? <span className="text-primary italic mt-2 block">{medicineName}...</span> : "Prescription..."}
+          </h3>
           <p className="text-muted-foreground text-sm mb-6">Our AI engine is parsing salt composition and finding clinically equivalent alternatives</p>
           <div className="flex items-center justify-center gap-3">
             <Loader2 className="w-5 h-5 text-primary animate-spin" />

@@ -7,9 +7,10 @@ import html2canvas from "html2canvas";
 
 interface DownloadReportProps {
   result: AnalysisResult;
+  results?: AnalysisResult[];
 }
 
-const DownloadReport = ({ result }: DownloadReportProps) => {
+const DownloadReport = ({ result, results }: DownloadReportProps) => {
   const [isExporting, setIsExporting] = useState(false);
 
   const handleDownloadPDF = async () => {
@@ -26,7 +27,12 @@ const DownloadReport = ({ result }: DownloadReportProps) => {
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
         
         pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`MedIntel-Report-${result.original.name.replace(/\s+/g, "-")}.pdf`);
+        
+        const fileName = results && results.length > 1
+          ? `MedIntel-Multi-Report.pdf`
+          : `MedIntel-Report-${result.original.name.replace(/\s+/g, "-")}.pdf`;
+          
+        pdf.save(fileName);
     } catch (error) {
         console.error("PDF generation failed", error);
     } finally {
