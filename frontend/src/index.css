@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 17%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 17%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 17%;
+
+    --primary: 168 33% 54%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 168 42% 66%;
+    --secondary-foreground: 0 0% 17%;
+
+    --muted: 163 50% 95%;
+    --muted-foreground: 0 0% 40%;
+
+    --accent: 168 39% 40%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 100% 62%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 168 20% 88%;
+    --input: 168 20% 88%;
+    --ring: 168 33% 54%;
+
+    --radius: 0.75rem;
+
+    --section-bg: 163 50% 95%;
+    --savings: 145 63% 42%;
+    --warning: 43 96% 56%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .section-bg {
+    background-color: hsl(var(--section-bg));
+  }
+  .text-savings {
+    color: hsl(var(--savings));
+  }
+  .bg-savings {
+    background-color: hsl(var(--savings));
+  }
+  .text-warning-custom {
+    color: hsl(var(--warning));
+  }
+}
+
+@layer components {
+  .hover-card-lift {
+    @apply transition-all duration-300 ease-out;
+  }
+  .hover-card-lift:hover {
+    @apply shadow-lg -translate-y-1;
+  }
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(168 33% 54%), hsl(168 39% 40%));
+  }
+  .gradient-hero {
+    background: linear-gradient(135deg, hsl(163 50% 95%), hsl(168 42% 96%));
+  }
+}
