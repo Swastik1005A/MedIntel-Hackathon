@@ -3,6 +3,8 @@ import base64
 import json
 import re
 from dotenv import load_dotenv
+
+# Load environment variables
 load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File
@@ -14,6 +16,7 @@ import google.generativeai as genai
 
 app = FastAPI()
 
+# Configure CORS for Vercel frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,9 +24,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize Clients
+# Pinned to groq==0.5.0 to avoid the 'proxies' TypeError
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 genai.configure(api_key=os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
 
+# Data structures
 class Alternative(BaseModel):
     alt_name: str
     alt_price: float
@@ -41,6 +47,7 @@ class MedicationRequest(BaseModel):
     name: str
 
 def clean_price(price_val):
+    """Helper to convert currency strings to floats."""
     if isinstance(price_val, (int, float)):
         return float(price_val)
     cleaned = re.sub(r'[^\d.]', '', str(price_val))
@@ -104,16 +111,12 @@ async def analyze_prescription(file: UploadFile = File(...)):
             "data": contents
         }
         
-        # UPGRADED to 1.5-pro for better handwriting recognition
+        # Using Gemini 1.5 Pro for superior handwriting recognition
         model = genai.GenerativeModel("gemini-1.5-pro-latest") 
         
         prompt = """You are a senior medical pharmacist. 
-        Analyze this Indian prescription image carefully. 
-        Decipher the doctor's handwriting to find medication names (brands or salts).
-        Look for prefixes like Tab., Cap., or Syr.
-        
+        Analyze this Indian prescription image carefully to find medication names.
         Return ONLY a JSON object: {"medicines": ["Name1", "Name2"]}
-        If you are unsure but see text, provide your best medical guess.
         If it's absolutely unreadable, return {"medicines": []}."""
         
         response = await model.generate_content_async([image_part, prompt])
@@ -127,7 +130,6 @@ async def analyze_prescription(file: UploadFile = File(...)):
 
     except Exception as e:
         print(f"Vision AI Error: {e}")
-        # Final fallback: If Pro fails, we tell the truth.
         return {
             "error": "Handwriting too messy for AI. Please enter manually.", 
             "medicines": [], 
@@ -136,5 +138,6 @@ async def analyze_prescription(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
+    # Important for Render deployment
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
