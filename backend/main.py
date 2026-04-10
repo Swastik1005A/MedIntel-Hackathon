@@ -114,10 +114,18 @@ async def analyze_prescription(file: UploadFile = File(...)):
         # Using Gemini 1.5 Pro for superior handwriting recognition
         model = genai.GenerativeModel("gemini-1.5-pro-latest") 
         
-        prompt = """You are a senior medical pharmacist. 
-        Analyze this Indian prescription image carefully to find medication names.
-        Return ONLY a JSON object: {"medicines": ["Name1", "Name2"]}
-        If it's absolutely unreadable, return {"medicines": []}."""
+        prompt = """You are a senior Pharmacy OCR Expert. 
+Decipher the handwriting in this Indian prescription image.
+
+INSTRUCTIONS:
+1. FOCUS: Look for brand names or generic salts.
+2. CONTEXT: Doctors often use prefixes like 'Tab', 'Cap', or 'Syr'. 
+3. CLEANING: Ignore quantity calculations (like 1x2 or total counts like =30).
+4. RECOGNITION: If a word is partially legible (e.g., 'Asca...'), use your medical knowledge of the Indian market to identify the most likely medication.
+
+Return ONLY a JSON object: 
+{"medicines": ["Detected Name 1", "Detected Name 2"]}
+If no medicines are found, return {"medicines": []}."""
         
         response = await model.generate_content_async([image_part, prompt])
         
