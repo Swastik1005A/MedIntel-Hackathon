@@ -18,6 +18,7 @@ import { type AnalysisResult } from "@/data/medicines";
 import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
 import { useToast } from "@/components/ui/use-toast";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const Index = () => {
   const { user } = useAuth();
@@ -40,7 +41,7 @@ const Index = () => {
         console.log("ANALYZING:", queries);
 
         const allAnalyses = await Promise.all(queries.map(async (query, qIndex) => {
-            const response = await axios.post('http://127.0.0.1:8000/analyze-medication', {
+            const response = await axios.post(`${API_URL}/analyze-medication`, {
                 name: query 
             }, { timeout: 15000 });
 
@@ -102,7 +103,7 @@ const Index = () => {
     formData.append("file", file);
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/analyze-prescription', formData);
+      const response = await axios.post(`${API_URL}/analyze-prescription`, formData);
 
 
       console.log("VISION EXTRACTED:", response.data);
