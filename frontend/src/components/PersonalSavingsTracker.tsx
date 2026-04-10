@@ -1,53 +1,25 @@
-import { useEffect, useState } from "react";
-import { Wallet, TrendingUp } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { TrendingUp } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useLanguage } from "@/context/LanguageContext";
 
 const PersonalSavingsTracker = () => {
   const { user } = useAuth();
-  const { t } = useLanguage();
-  const [totalSavings, setTotalSavings] = useState(0);
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    if (!user) return;
-    const fetch = async () => {
-      const { data } = await supabase
-        .from("user_savings")
-        .select("savings_amount")
-        .eq("user_id", user.id);
-      if (data) {
-        const total = data.reduce((sum, r) => sum + Number(r.savings_amount), 0);
-        setTotalSavings(total);
-        setCount(data.length);
-      }
-    };
-    fetch();
-  }, [user]);
-
-  if (!user || totalSavings === 0) return null;
+  
+  if (!user) return null;
 
   return (
-    <section className="py-8">
-      <div className="container mx-auto px-4 max-w-3xl">
-        <div className="bg-card rounded-2xl border p-6 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <Wallet className="w-6 h-6 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">{t("totalSavings.title")}</p>
-            <p className="text-2xl font-extrabold text-savings">₹{totalSavings.toLocaleString()}</p>
-          </div>
-          <div className="ml-auto text-right">
-            <div className="flex items-center gap-1 text-primary">
-              <TrendingUp className="w-4 h-4" />
-              <span className="text-sm font-semibold">{count} switches</span>
-            </div>
+    <div className="fixed bottom-4 right-4 z-50 animate-bounce-in opacity-80 cursor-not-allowed">
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-5 py-3 rounded-full shadow-lg flex items-center gap-3">
+        <div className="bg-white/20 p-2 rounded-full">
+          <TrendingUp className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-emerald-50 tracking-wide uppercase">Total Dashboard Savings</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-bold">Coming Soon</span>
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 };
 

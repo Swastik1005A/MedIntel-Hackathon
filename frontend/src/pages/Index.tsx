@@ -17,78 +17,137 @@ import DownloadReport from "@/components/DownloadReport";
 import { type AnalysisResult } from "@/data/medicines";
 import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
+import { useToast } from "@/components/ui/use-toast";
 
 const Index = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [noResult, setNoResult] = useState(false);
 
+  // --- 1. MEDICINE SEARCH LOGIC (Core AI Engine) ---
   const handleSearch = async (query: string) => {
     setIsLoading(true);
     setResult(null);
     setNoResult(false);
 
     try {
-        const response = await axios.post('http://localhost:8000/analyze-medication', {
-            med_name: query,
-            user_id: user ? user.uid : 'anonymous'
-        });
+        console.log("ANALYZING:", query);
+        const response = await axios.post('http://127.0.0.1:8000/analyze-medication', {
+            name: query 
+        }, { timeout: 15000 });
 
         const data = response.data;
-        const cheapestAlt = data.cheaper_alternatives[0];
-
-        // Deduce original price from savings geometry
-        const savingsPercent = cheapestAlt.percent_savings;
-        let originalPrice = cheapestAlt.estimated_price_inr;
-        if (savingsPercent < 100) {
-            originalPrice = cheapestAlt.estimated_price_inr / (1 - (savingsPercent / 100));
-        }
-
-        // Map Gemini JSON to Lovable's UI Schema
+        
+        // Map ALL alternatives from Groq/Llama to the UI Schema
         const analysis: AnalysisResult = {
             original: {
                 id: "original-001",
-                name: query,
-                manufacturer: "Branded Manufacturer",
-                salt: data.active_ingredient,
-                price: Math.round(originalPrice),
-                dosage: data.dosage_form,
-                type: data.therapeutic_purpose
+                name: data.name || query,
+                manufacturer: "Branded",
+                salt: data.salt || 'Medicine',
+                price: Math.round(data.price),
+                dosage: 'Standard',
+                type: 'Medicine'
             },
-            alternatives: data.cheaper_alternatives.map((alt: any, i: number) => ({
-                id: `alt-${i}`,
-                name: alt.brand_name,
-                manufacturer: "Generic Manufacturer",
-                salt: data.active_ingredient,
-                price: alt.estimated_price_inr,
-                dosage: data.dosage_form,
-                type: data.therapeutic_purpose
+            alternatives: data.alternatives.map((alt: any, index: number) => ({
+                id: `alt-${index}`,
+                name: alt.alt_name,
+                manufacturer: "Generic",
+                salt: data.salt || 'Medicine',
+                price: Math.round(alt.alt_price),
+                dosage: 'Standard',
+                type: 'Medicine'
             })),
-            confidence: 96,
-            safetyLevel: data.safety_indicator.toLowerCase().includes("consult") ? "consult" : "safe",
-            reasoning: data.safety_indicator
+            confidence: 98,
+            safetyLevel: "safe",
+            reasoning: data.alternatives[0]?.side_effects?.length > 0 
+                ? "Watch out for: " + data.alternatives[0].side_effects.join(", ") 
+                : "Generally safe."
         };
 
         setResult(analysis);
         setNoResult(false);
 
     } catch (err: any) {
-        console.error("API Error", err);
+        console.error("Search Error:", err.message);
         setNoResult(true);
+        toast({
+          title: "Analysis Failed",
+          description: "The AI engine is taking too long or the backend is down.",
+          variant: "destructive"
+        });
     } finally {
         setIsLoading(false);
     }
   };
 
-  const savings = result ? result.original.price - result.alternatives[0].price : 0;
+  // --- 2. PRESCRIPTION VISION LOGIC (The "Magic" Step) ---
+  const handleFileUpload = async (file: File) => {
+    setIsLoading(true);
+    setResult(null);
+    toast({ 
+        title: "Scanning Prescription", 
+        description: "Llama 3.2 Vision is reading the doctor's handwriting..." 
+    });
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await axios.post('http://127.0.0.1:8000/analyze-prescription', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      console.log("VISION EXTRACTED:", response.data);
+
+      if (response.data.medicines && response.data.medicines.length > 0) {
+        const firstMed = response.data.medicines[0];
+        toast({ 
+            title: "Success!", 
+            description: `Extracted: ${firstMed}. Finding cheaper options...` 
+        });
+        
+        // AUTO-TRIGGER Search
+        handleSearch(firstMed); 
+      } else {
+        toast({ 
+            title: "Read Error", 
+            description: "Could not identify medicine names. Use a clearer image.", 
+            variant: "destructive" 
+        });
+        setIsLoading(false);
+      }
+    } catch (err) {
+      console.error("Vision Error:", err);
+      toast({ 
+        title: "Vision AI Error", 
+        description: "Upload failed or server is offline.", 
+        variant: "destructive" 
+      });
+      setIsLoading(false);
+    }
+  };
+
+  // --- 3. CALCULATE SAVINGS ---
+  const lowestAltPrice = result && result.alternatives.length > 0 
+    ? Math.min(...result.alternatives.map(a => a.price)) 
+    : 0;
+  
+  const savings = result ? result.original.price - lowestAltPrice : 0;
   const savingsPercent = result ? Math.round((savings / result.original.price) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <HeroSection />
-      <InputModule onSearch={handleSearch} isLoading={isLoading} />
+      
+      <InputModule 
+        onSearch={handleSearch} 
+        onFileUpload={handleFileUpload} 
+        isLoading={isLoading} 
+      />
 
       {user && <SearchHistory onReSearch={handleSearch} />}
       {user && <PersonalSavingsTracker />}
@@ -100,25 +159,24 @@ const Index = () => {
           <div className="container mx-auto px-4 max-w-2xl text-center">
             <div className="bg-card rounded-2xl border p-10 shadow-sm">
               <p className="text-4xl mb-4">🔍</p>
-              <h3 className="text-xl font-semibold text-foreground mb-2">No Alternatives Found</h3>
+              <h3 className="text-xl font-semibold text-foreground mb-2">Engine Offline</h3>
               <p className="text-sm text-muted-foreground">
-                We couldn't reach the intelligence engine or no options are available. Ensure backend is running.
+                Run 'uvicorn main:app --reload' in your backend folder to start the AI.
               </p>
             </div>
           </div>
         </section>
       )}
 
-      {result && (
+      {result && result.alternatives.length > 0 && (
         <div className="animate-fade-in" id="report-content">
           <ComparisonPanel result={result} />
           <SavingsHighlight savings={savings} percentage={savingsPercent} />
           <SafetyIndicator result={result} />
           <ExplainPanel reasoning={result.reasoning} />
+          <DownloadReport result={result} />
         </div>
       )}
-      
-      {result && <DownloadReport result={result} />}
 
       <PharmacySection />
       <GovernmentAwareness />

@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 
 interface InputModuleProps {
   onSearch: (query: string) => void;
+  onFileUpload?: (file: File) => void;
   isLoading: boolean;
+  isExtracting?: boolean;
 }
 
-const InputModule = ({ onSearch, isLoading }: InputModuleProps) => {
+const InputModule = ({ onSearch, onFileUpload, isLoading, isExtracting }: InputModuleProps) => {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
@@ -37,10 +39,9 @@ const InputModule = ({ onSearch, isLoading }: InputModuleProps) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       setPreview(ev.target?.result as string);
-      // Simulate OCR
-      setTimeout(() => {
-        setQuery("Crocin Advance");
-      }, 500);
+      if (onFileUpload) {
+        onFileUpload(file);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -69,8 +70,9 @@ const InputModule = ({ onSearch, isLoading }: InputModuleProps) => {
                 className="w-full pl-12 pr-4 py-3.5 rounded-xl border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow text-base"
               />
             </div>
-            <Button onClick={handleSearch} disabled={isLoading} className="gradient-primary text-primary-foreground px-6 py-3.5 h-auto rounded-xl font-semibold">
-              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Analyze"}
+            <Button onClick={handleSearch} disabled={isLoading || isExtracting} className="gradient-primary text-primary-foreground px-6 py-3.5 h-auto rounded-xl font-semibold">
+              {(isLoading || isExtracting) && <Loader2 className="w-5 h-5 animate-spin mr-2" />}
+              {isExtracting ? "Extracting Handwriting via Llama 3.2 Vision..." : isLoading ? "Analyzing..." : "Analyze"}
             </Button>
           </div>
           {error && <p className="text-destructive text-sm mt-2 flex items-center gap-1">⚠️ {error}</p>}

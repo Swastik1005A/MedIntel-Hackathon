@@ -1,154 +1,121 @@
 import os
+import base64
 import json
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import List, Optional
+import re
 from dotenv import load_dotenv
-import firebase_admin
-from firebase_admin import credentials, firestore
-import google.generativeai as genai
-
 load_dotenv()
 
-# --- Firebase Initialization ---
-# Check if Firebase is already initialized to avoid errors during server reloads
-if not firebase_admin._apps:
-    key_path = "serviceAccountKey.json"
-    if not os.path.exists(key_path):
-        key_path = "backend/serviceAccountKey.json" # Fallback if run from root
-    
-    if os.path.exists(key_path):
-        cred = credentials.Certificate(key_path)
-        firebase_admin.initialize_app(cred)
-        print("Firebase initialized successfully.")
-    else:
-        print("WARNING: serviceAccountKey.json not found. Firebase features will fail.")
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List
+from groq import Groq
 
-try:
-    # Use default Firestore database
-    db = firestore.client()
-except Exception as e:
-    db = None
-    print(f"Failed to initialize Firestore client: {e}")
-
-# --- Gemini Initialization ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    print("Gemini initialized successfully.")
-else:
-    print("WARNING: GEMINI_API_KEY not found in environment.")
-
-app = FastAPI(title="Affordable Medicine Intelligence Platform Backend")
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Models ---
-class MedicationRequest(BaseModel):
-    med_name: str
-    user_id: str
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
+# Data structures for the AI to follow
 class Alternative(BaseModel):
-    brand_name: str = Field(description="Include the manufacturer's name (e.g., 'Advent by Cipla')")
-    estimated_price_inr: float
-    percent_savings: float
+    alt_name: str
+    alt_price: float
+    savings: int
+    side_effects: List[str]
 
-class AnalysisResponse(BaseModel):
-    active_ingredient: str
-    therapeutic_purpose: str
-    dosage_form: str = Field(description="Must match the exact strength of the original if applicable")
-    safety_indicator: str = Field(description="Explicitly state if it is a 'therapeutic equivalent' or requires a specific dosage adjustment notice")
-    cheaper_alternatives: List[Alternative]
+class MedicationResponse(BaseModel):
+    name: str
+    salt: str
+    price: float
+    alternatives: List[Alternative]
 
-# --- Endpoints ---
-@app.get("/")
-def read_root():
-    return {"status": "Affordable Medicine Intelligence API is running"}
+class MedicationRequest(BaseModel):
+    name: str
 
-@app.post("/analyze-medication", response_model=AnalysisResponse)
-async def analyze_medication(req: MedicationRequest):
-    if not db:
-        raise HTTPException(status_code=500, detail="Firestore is not initialized. Check serviceAccountKey.json.")
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="Gemini API Key is missing. Check .env file.")
+def clean_price(price_val):
+    """Helper to convert strings like '₹30' or '45.50 INR' to a clean float."""
+    if isinstance(price_val, (int, float)):
+        return float(price_val)
+    # Remove everything except numbers and dots
+    cleaned = re.sub(r'[^\d.]', '', str(price_val))
+    return float(cleaned) if cleaned else 0.0
 
-    # Format the mediation name to use as a consistent Document ID
-    med_name_formatted = req.med_name.strip().lower()
-    
-    # 1. Caching Layer: Check Firestore first
-    # Path: users/{user_id}/medications/{med_name}
-    doc_ref = db.collection("users").document(req.user_id).collection("medications").document(med_name_formatted)
-    doc_snap = doc_ref.get()
-    
-    if doc_snap.exists:
-        print(f"CACHE HIT: Returning existing analysis for {med_name_formatted}")
-        return doc_snap.to_dict()
-
-    print(f"CACHE MISS: Calling Gemini for {med_name_formatted}")
-    
-    # 2. Call Gemini 3 Flash if not in cache
-    model = genai.GenerativeModel('gemini-3-flash-preview')
-    
-    prompt = f"""
-    You are an expert pharmaceutical assistant and doctor specializing in the Indian healthcare market and CDSCO pharmaceutical regulations.
-    Analyze the following medication: '{req.med_name}'.
-    
-    Provide a detailed pharmaceutical analysis strictly as JSON.
-    Only suggest brands/generics commonly approved for sale in India.
-    
-    Crux Requirements:
-    1. Dosage Compatibility: Verify that suggested alternatives have the EXACT SAME strength (e.g., 625mg) as the original.
-    2. Comparison Depth: Include the manufacturer's name in the 'brand_name' (e.g., 'Advent by Cipla').
-    3. Decision Support: In the 'safety_indicator', explicitly state if the alternative is a 'therapeutic equivalent' or if it requires a specific dosage adjustment notice. Also include any critical side effects in ALL CAPS.
-    4. Provide realistic estimated prices in INR (₹) for the alternatives and the calculated percentage savings compared to '{req.med_name}'.
-    """
-    
+@app.post("/analyze-medication", response_model=MedicationResponse)
+async def analyze_medication(request: MedicationRequest):
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "object",
-                    "properties": {
-                        "active_ingredient": {"type": "string"},
-                        "therapeutic_purpose": {"type": "string"},
-                        "dosage_form": {"type": "string"},
-                        "safety_indicator": {"type": "string"},
-                        "cheaper_alternatives": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "brand_name": {"type": "string"},
-                                    "estimated_price_inr": {"type": "number"},
-                                    "percent_savings": {"type": "number"}
-                                },
-                                "required": ["brand_name", "estimated_price_inr", "percent_savings"]
-                            }
-                        }
-                    },
-                    "required": ["active_ingredient", "therapeutic_purpose", "dosage_form", "safety_indicator", "cheaper_alternatives"]
-                }
-            )
+        prompt = f"""
+        Analyze the Indian medication: {request.name}
+        Return ONLY a JSON object with this EXACT structure:
+        {{
+            "name": "Branded Name",
+            "salt": "Chemical Composition",
+            "price": 0.0,
+            "alternatives": [
+                {{"alt_name": "Alt1", "alt_price": 0.0, "savings": 0, "side_effects": ["Effect1"]}},
+                {{"alt_name": "Alt2", "alt_price": 0.0, "savings": 0, "side_effects": ["Effect2"]}},
+                {{"alt_name": "Alt3", "alt_price": 0.0, "savings": 0, "side_effects": ["Effect3"]}}
+            ]
+        }}
+        Provide at least 3 generic alternatives available in India.
+        """
+        
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are a professional medical pharmacist in India. Output ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
         )
         
-        # 3. Parse Gemini Result
-        analysis_result = json.loads(response.text)
+        data = json.loads(completion.choices[0].message.content)
         
-        # 4. Save to Firestore (Cache it)
-        doc_ref.set(analysis_result)
-        print(f"Analysis saved to Firestore for {med_name_formatted}")
-        
-        return analysis_result
-        
+        # Data Cleaning: Ensure prices are floats and savings are ints
+        data["price"] = clean_price(data.get("price", 0))
+        for alt in data.get("alternatives", []):
+            alt["alt_price"] = clean_price(alt.get("alt_price", 0))
+            alt["savings"] = int(clean_price(alt.get("savings", 0)))
+            
+        return data
+
     except Exception as e:
-        print(f"Error calling Gemini or Firestore: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to analyze medication: {str(e)}")
+        print(f"AI Error: {e}")
+        return {
+            "name": request.name,
+            "salt": "Analysis Unavailable",
+            "price": 0.0,
+            "alternatives": []
+        }
+
+@app.post("/analyze-prescription")
+async def analyze_prescription(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        base64_image = base64.b64encode(contents).decode('utf-8')
+        
+        completion = client.chat.completions.create(
+            model="llama-3.2-11b-vision-preview",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Identify medicine names in this prescription. Return ONLY a JSON list of strings under key 'medicines'."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]
+                }
+            ],
+            response_format={"type": "json_object"}
+        )
+        return json.loads(completion.choices[0].message.content)
+    except Exception as e:
+        return {"error": str(e)}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
