@@ -104,27 +104,32 @@ async def analyze_prescription(file: UploadFile = File(...)):
             "data": contents
         }
         
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
-        # STRICT PROMPT to avoid extra text or markdown
-        prompt = """Identify medications in this Indian prescription. 
-        Return ONLY a raw JSON object with NO markdown or code blocks.
-        Example format: {"medicines": ["Medicine Name 1", "Medicine Name 2"]}
-        If no medicines are found, return {"medicines": []}."""
+        # UPGRADED to 1.5-pro for better handwriting recognition
+        model = genai.GenerativeModel("gemini-1.5-pro-latest") 
+        
+        prompt = """You are a senior medical pharmacist. 
+        Analyze this Indian prescription image carefully. 
+        Decipher the doctor's handwriting to find medication names (brands or salts).
+        Look for prefixes like Tab., Cap., or Syr.
+        
+        Return ONLY a JSON object: {"medicines": ["Name1", "Name2"]}
+        If you are unsure but see text, provide your best medical guess.
+        If it's absolutely unreadable, return {"medicines": []}."""
         
         response = await model.generate_content_async([image_part, prompt])
         
-        # Enhanced text cleaning
+        # Robust cleaning for markdown garbage
         result_text = response.text.strip()
-        result_text = re.sub(r'```json|```', '', result_text).strip()
+        result_text = re.sub(r'```json\s*|```\s*', '', result_text)
         
-        print(f"GEMINI RAW OUTPUT: {result_text}")
+        print(f"GEMINI PRO OUTPUT: {result_text}")
         return json.loads(result_text)
 
     except Exception as e:
         print(f"Vision AI Error: {e}")
-        # FIXED: Removed hardcoded Ciprofloxacin/Paracetamol fallback
+        # Final fallback: If Pro fails, we tell the truth.
         return {
-            "error": "Prescription analysis failed. Please try typing the name manually.", 
+            "error": "Handwriting too messy for AI. Please enter manually.", 
             "medicines": [], 
             "status": "error"
         }
