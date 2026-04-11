@@ -3,6 +3,7 @@ import base64
 import json
 import re
 from dotenv import load_dotenv
+from PIL import Image
 
 # Load environment variables
 load_dotenv()
